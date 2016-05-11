@@ -1,6 +1,7 @@
-﻿#region
+#region
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -34,6 +35,16 @@ namespace MyWebTests
         {
             TestMyWeb("http://localhost:8099/", "async");
         }
+        [TestMethod]
+        public void TestMyASyncWeb1()
+        {
+            TestMyWeb("http://localhost:8079/", "async1");
+        }
+        [TestMethod]
+        public void TestMyASyncWeb2()
+        {
+            TestMyWeb("http://localhost:8089/", "async2");
+        }
 
         public void TestMyWeb(string endpoint, string action)
         {
@@ -43,7 +54,7 @@ namespace MyWebTests
             {
                 //initial request, to warm up the server
                 var result = Helper.ListAllProducts(action).Result;
-                Console.WriteLine("First Id :" + result.ToList().First().Id);
+                Console.WriteLine("First Id :" + result.ToList().First());
 
                 Helper.Profile(() =>
                 {
@@ -76,6 +87,11 @@ namespace MyWebTests
                 public int Id { get; set; }
             }
 
+            public class ProductAdvanced
+            {
+                public int ProductId { get; set; }
+            }
+
             public class ProductsFactory
             {
                 public static Product[] GetProducts()
@@ -85,13 +101,44 @@ namespace MyWebTests
                         new Product {Id = 1}
                     };
                 }
+                public static ProductAdvanced[] GetProductsAdvanced()
+                {
+                    return new[]
+                    {
+                        new ProductAdvanced {ProductId = 1}
+                    };
+                }
+
             }
 
             public class ProductService
             {
                 public async Task<Product[]> Load()
                 {
-                    return await Task.Delay(TimeSpan.FromMilliseconds(TotalServiceProcessingTimeMilliseconds)) .ContinueWith(c => ProductsFactory.GetProducts());
+                    return await Task.Delay(TimeSpan.FromMilliseconds(TotalServiceProcessingTimeMilliseconds)).ContinueWith(c => ProductsFactory.GetProducts());
+                }
+                public async Task<ProductAdvanced> LoadFirstAdvanced()
+                {
+                    return await Task.Delay(TimeSpan.FromMilliseconds(TotalServiceProcessingTimeMilliseconds)).ContinueWith(c => ProductsFactory.GetProductsAdvanced().FirstOrDefault());
+                }
+
+                public async Task<ProductAdvanced[]> LoadMany()
+                {
+                    var products= await Task.Delay(TimeSpan.FromMilliseconds(TotalServiceProcessingTimeMilliseconds)).ContinueWith(c => ProductsFactory.GetProducts());
+
+                    var result=new List<ProductAdvanced>();
+                    foreach (var product in products)
+                    {
+                         result.Add(await LoadFirstAdvanced());
+                    }
+
+                    return result.ToArray();
+                }
+
+                public async Task<ProductAdvanced[]> LoadMany2()
+                {
+                    var products = await Task.Delay(TimeSpan.FromMilliseconds(TotalServiceProcessingTimeMilliseconds)).ContinueWith(c => ProductsFactory.GetProducts());
+                    return await Task.WhenAll(products.AsParallel().Select(async (p) => await LoadFirstAdvanced()));
                 }
             }
 
@@ -108,6 +155,18 @@ namespace MyWebTests
                 {
                     return await new ProductService().Load();
                 }
+
+                [HttpGet]
+                public async Task<ProductAdvanced[]> Async1()
+                {
+                    return await new ProductService().LoadMany();
+                }
+
+                [HttpGet]
+                public async Task<ProductAdvanced[]> Async2()
+                {
+                    return await new ProductService().LoadMany2();
+                }
             }
         }
 
@@ -120,11 +179,11 @@ namespace MyWebTests
 
             private HttpClient Client { set; get; }
 
-            public async Task<IEnumerable<MyApplication.Product>> ListAllProducts(string action)
+            public async Task<IEnumerable<object>> ListAllProducts(string action)
             {
                 var result = await Client.GetAsync("api/products/" + action);
                 result.EnsureSuccessStatusCode();
-                var products = result.Content.ReadAsAsync<IEnumerable<MyApplication.Product>>().Result;
+                var products = result.Content.ReadAsAsync<IEnumerable<object>>().Result;
                 return products;
             }
 
