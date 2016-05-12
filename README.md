@@ -1,2 +1,1 @@
-# Async-WebApi-Is-Faster-Than-Sync-Web
-PROOF : THAT ASYNC WEB API IS FASTER (>15X) THEN SYNC WEB API
+# Async Task Patterns Performance Comparison In WebApi In A Single File 
