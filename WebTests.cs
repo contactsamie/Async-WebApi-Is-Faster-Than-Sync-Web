@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.SelfHost;
+using Microsoft.Isam.Esent.Collections.Generic;
 
 #endregion
 
@@ -19,11 +20,10 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
      PROOF : THAT ASYNC WEB API IS FASTER (>15X) THEN SYNC WEB API
      Using Owin & Web API
      */
-
     [TestClass]
     public class WebTests
     {
-        private const int TotalNumberOfRequests = 1000000;
+        private const int TotalNumberOfRequests = 100000;
         private const int TotalServiceProcessingTimeMilliseconds = 10;
         private const int numberOfWorkers = 1;
         [TestMethod]
@@ -68,19 +68,7 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
             TestMyWeb("http://localhost:8389/", "async5");
         }
 
-        public class MyTestActorInt : Actor<int, int>
-        {
-            public MyTestActorInt(int workerCount) : base(workerCount)
-            {
-            }
-        }
-
-        public class MyTestActorString : Actor<string, string>
-        {
-            public MyTestActorString(int workerCount) : base(workerCount)
-            {
-            }
-        }
+      
 
 
 
@@ -88,8 +76,8 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         [TestMethod]
         public void TestActorTell()
         {
-            Helper = new TestHelper("http://localhost:8389/");
-            var actor = new MyTestActorInt(numberOfWorkers);
+            Helper = new TestHelper();
+            var actor = new SlimActor<int,int>(numberOfWorkers);
 
             Helper.Profile(() =>
             {
@@ -104,8 +92,8 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         [TestMethod]
         public void TestActorTell2()
         {
-            Helper = new TestHelper("http://localhost:8389/");
-            var actor = new MyTestActorInt(numberOfWorkers);
+            Helper = new TestHelper();
+            var actor = new SlimActor<int, int>(numberOfWorkers);
 
             Helper.Profile(() =>
             {
@@ -120,8 +108,8 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         [TestMethod]
         public void TestActorAsk()
         {
-            Helper = new TestHelper("http://localhost:8389/");
-            var actor = new MyTestActorInt(numberOfWorkers);
+            Helper = new TestHelper();
+            var actor = new SlimActor<int, int>(numberOfWorkers);
             Helper.Profile(() =>
             {
                 foreach (var i in Enumerable.Range(0, TotalNumberOfRequests))
@@ -135,8 +123,8 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         [TestMethod]
         public void TestActorAsk2()
         {
-            Helper = new TestHelper("http://localhost:8389/");
-            var actor = new MyTestActorInt(numberOfWorkers);
+            Helper = new TestHelper();
+            var actor = new SlimActor<int, int>(numberOfWorkers);
             Helper.Profile(() =>
             {
                 Task.WhenAll(Enumerable.Range(0, TotalNumberOfRequests).AsParallel().Select(async (i) =>
@@ -150,8 +138,8 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         [TestMethod]
         public void TestActor2()
         {
-            var actor = new MyTestActorInt(1);
-            var actor2 = new MyTestActorString(numberOfWorkers);
+            var actor = new SlimActor<int, int>(1);
+            var actor2 = new SlimActor<string, string>(numberOfWorkers);
 
             foreach (var i in Enumerable.Range(0, TotalNumberOfRequests))
             {
@@ -162,6 +150,75 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
                 Assert.AreEqual(i + "0", result2);
             }
         }
+
+        [TestMethod]
+        public void TestEssent1()
+        {
+            Helper = new TestHelper();
+            PersistentDictionaryFile.DeleteFiles("Names1");
+            Assert.IsFalse(PersistentDictionaryFile.Exists("Names1"));
+            var dictionary = new PersistentDictionary<string, string>("Names1");
+            Helper.Profile(() =>
+            {
+            foreach (var i in Enumerable.Range(1, TotalNumberOfRequests))
+            {
+              //  Console.WriteLine("What is your first name?");
+               string firstName = i.ToString();
+                var lastName = Guid.NewGuid().ToString();
+                if (dictionary.ContainsKey(firstName))
+                {
+               //     Console.WriteLine("Welcome back {0} {1}",firstName,dictionary[firstName]);
+                }
+                else
+                {
+                   // Console.WriteLine("I don't know you, {0}. What is your last name?",firstName);
+                    dictionary[firstName] = lastName;
+                }
+
+                Assert.AreEqual(dictionary[firstName], lastName);
+          
+            } 
+
+            });
+         
+          
+        }
+
+        [TestMethod]
+        public void TestEssent2()
+        {
+            Helper = new TestHelper();
+            PersistentDictionaryFile.DeleteFiles("Names2");
+            Assert.IsFalse(PersistentDictionaryFile.Exists("Names2"));
+            var dictionary = new PersistentDictionary<string, string>("Names2");
+            Helper.Profile(() =>
+            {
+                Task.WhenAll(Enumerable.Range(0, TotalNumberOfRequests).AsParallel().Select(async (i) =>
+                {
+                    //  Console.WriteLine("What is your first name?");
+                    string firstName = i.ToString();
+                    var lastName = Guid.NewGuid().ToString();
+                    if (dictionary.ContainsKey(firstName))
+                    {
+                        //     Console.WriteLine("Welcome back {0} {1}",firstName,dictionary[firstName]);
+                    }
+                    else
+                    {
+                        // Console.WriteLine("I don't know you, {0}. What is your last name?",firstName);
+                        dictionary[firstName] = lastName;
+                    }
+
+                    Assert.AreEqual(dictionary[firstName], lastName);
+
+                    await Task.FromResult(true);
+
+                })).Wait();
+
+            });
+
+
+        }
+
 
         public void TestMyWeb(string endpoint, string action)
         {
@@ -228,11 +285,11 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
                 }
             }
 
-            public class ProductActor : Actor<ProductAToProductBCommand, ProductAToProductBResponse>
+            public class ProductASlimActor : ASlimActor<ProductAToProductBCommand, ProductAToProductBResponse>
             {
                 private IProductConvertionService _productConvertionService { set; get; }
 
-                public ProductActor(int workerCount) : base(workerCount)
+                public ProductASlimActor(int workerCount) : base(workerCount)
                 {
                     _productConvertionService = new ProductConvertionService();
                 }
@@ -275,7 +332,7 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
 
             public class ProductService
             {
-                public static ProductActor ProductActor = new ProductActor(1);
+                public static ProductASlimActor ProductASlimActor = new ProductASlimActor(1);
 
                 public async Task<ProductA[]> LoadProductAs()
                 {
@@ -330,7 +387,7 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
                     var productAdvanced = new List<ProductB>();
                     var enumerable = products.Select(async (p) =>
                     {
-                        var tmpProduct = await ProductActor.Ask(new ProductAToProductBCommand() { ProductA = p }, null);
+                        var tmpProduct = await ProductASlimActor.Ask(new ProductAToProductBCommand() { ProductA = p }, null);
                         productAdvanced.Add(tmpProduct.ProductB);
                     });
                     await Task.WhenAll(enumerable);
@@ -386,9 +443,13 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
 
         public class TestHelper
         {
-            public TestHelper(string endpoint)
+            public TestHelper(string endpoint=null)
             {
-                Client = new HttpClient() { BaseAddress = new Uri(endpoint) };
+                if (!string.IsNullOrEmpty(endpoint))
+                {
+                    Client = new HttpClient() { BaseAddress = new Uri(endpoint) };
+                }
+               
             }
 
             private HttpClient Client { set; get; }
@@ -426,6 +487,15 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
 
         #endregion
     }
+
+
+    public class SlimActor<T,TR> : ASlimActor<T, TR>
+    {
+        public SlimActor(int workerCount) : base(workerCount)
+        {
+        }
+    }
+
 
     public class MailBoxWatcher<TCommand, TResponse>
     {
@@ -481,11 +551,11 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
         }
     }
 
-    public class Actor<TCommand, TResponse> : IDisposable
+    public abstract class ASlimActor<TCommand, TResponse> : IDisposable
     {
         private readonly BlockingCollection<MailBoxWatcher<TCommand, TResponse>.MailMessage> _mailBox = new BlockingCollection<MailBoxWatcher<TCommand, TResponse>.MailMessage>();
 
-        protected Actor(int workerCount)
+        protected ASlimActor(int workerCount)
         {
             for (var i = 0; i < workerCount; i++)
                 Task.Run(async () => await Consume());
@@ -536,11 +606,12 @@ namespace AsyncTaskPatternsPerformanceComparisonInWebApi
             _disposed = true;
         }
 
-        ~Actor()
+        ~ASlimActor()
         {
             Dispose(false);
         }
 
         #endregion
     }
+    
 }
